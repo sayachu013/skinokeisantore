@@ -84,6 +84,15 @@
         .admin-progress-bar-fill.complete { background: var(--secondary-color); }
         .admin-student-card .admin-progress-row .admin-score-badge { width: 10%; text-align: right; font-weight: bold; font-size: 12px; color: #0f172a; }
         .admin-student-card .admin-progress-row .admin-score-badge.gold { color: #b45309; }
+
+        /* 🎉 追加：クリアモーダル画面のスタイル */
+        .clear-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.85); display: flex; justify-content: center; align-items: center; z-index: 9999; }
+        .clear-content { background: white; padding: 40px 30px; border-radius: 24px; text-align: center; max-width: 450px; width: 90%; box-shadow: 0 20px 40px rgba(0,0,0,0.2); animation: popUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        @keyframes popUp { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .clear-title { font-size: 28px; font-weight: 800; color: #b45309; margin-bottom: 10px; }
+        .clear-subtitle { font-size: 16px; color: #475569; margin-bottom: 25px; line-height: 1.6; }
+        .clear-icon { font-size: 64px; margin-bottom: 15px; display: inline-block; animation: bouncin 1s infinite alternate; }
+        @keyframes bouncin { from { transform: translateY(0); } to { transform: translateY(-10px); } }
     </style>
 </head>
 <body>
@@ -134,6 +143,15 @@
     </div>
 </div>
 
+<div id="clear-modal-screen" class="clear-modal hidden">
+    <div class="clear-content">
+        <div class="clear-icon">🎉</div>
+        <div class="clear-title">👑 単元クリア！</div>
+        <div id="clear-message" class="clear-subtitle"></div>
+        <button style="background-color: var(--secondary-color); margin-top: 10px;" onclick="closeClearModal()">単元メニューに戻る</button>
+    </div>
+</div>
+
 <script>
     const GAS_URL = "https://script.google.com/macros/s/AKfycbwhx3ZliYX27Bfwra80UlcTXy52Mw7fpro-flCCStJSkPWR4ztfII8oTDTJJlVbmDM/exec";
 
@@ -148,6 +166,9 @@
 
     let selectedCategory = "";
     let selectedDifficulty = "";
+    
+    // ⭕️ 追加：現在の単元の「連続正解数」を一時保管する変数
+    let currentContinuousCorrect = 0;
 
     const modeConfigs = [
         { category: "多項式の計算", difficulty: "基本", label: "多項式の計算（基本）" },
@@ -248,16 +269,25 @@
             
             const btn = document.createElement("button");
             btn.className = `menu-btn ${isCleared ? 'cleared' : ''}`;
-            btn.innerHTML = `<div><div>${mode.label}</div><div class="progress-text">正解数: ${score} / 5</div></div><div>${isCleared ? '<span class="crown">👑クリア!</span>' : '<span>▶</span>'}</div>`;
+            btn.innerHTML = `<div><div>${mode.label}</div><div class="progress-text">連続正解数: ${score} / 5</div></div><div>${isGoldScore(score) ? '<span class="crown">👑クリア!</span>' : '<span>▶</span>'}</div>`;
             btn.onclick = () => startMode(mode.category, mode.difficulty);
             menuList.appendChild(btn);
         });
+    }
+
+    // スコアが5以上かチェックする便利関数
+    function isGoldScore(score) {
+        return score >= 5;
     }
 
     function startMode(category, difficulty) {
         currentMenuKey = `${currentStudentId}__${category}__${difficulty}`;
         selectedCategory = category;
         selectedDifficulty = difficulty;
+        
+        // ⭕️ 単元開始時に、この挑戦での連続正解数を0からリスタートさせる
+        // ただし、過去にすでに5連勝して保存されている学習データ（進捗）は破壊しません
+        currentContinuousCorrect = progressData[currentMenuKey] >= 5 ? 5 : 0;
         
         buildQuestionPool();
         
@@ -297,7 +327,8 @@
         currentQuestion = currentModePool.pop();
         
         document.getElementById("q-category").textContent = currentQuestion.category || "";
-        document.getElementById("q-difficulty").textContent = `難易度: ${currentQuestion.question || "基本"}`; 
+        // ⭕️ 画面上部の表示を、現在のリアルタイムな「連続正解数」にダイナミックに変更！
+        document.getElementById("q-difficulty").textContent = `5問連続正解に挑戦中 [ 現在 ${currentContinuousCorrect >= 5 ? 5 : currentContinuousCorrect} 連勝 ]`; 
         
         const qTextDiv = document.getElementById("q-text");
         let rawQ = currentQuestion.answer || ""; 
@@ -348,7 +379,6 @@
             const btn = document.createElement("button");
             btn.className = "choice-btn";
             
-            // ⭕️ 【超重要修正】ボタンに「生データの文字列」をカスタム属性として完全に記憶させる
             btn.setAttribute("data-raw-choice", String(choice).trim());
             
             btn.innerHTML = choice.includes('\\frac') || !/[\u30a0-\u30ff\u3040-\u309f\u4e00-\u9faf]/.test(cleanChoice) 
@@ -371,21 +401,35 @@
             btn.disabled = true; 
         });
 
-        // ⭕️ 【大改修】includesによるガバガバ判定を完全に廃止。
-        // 生成時に埋め込んだ「data-raw-choice」属性の生データ同士を、完全一致でピンポイント突合。
         if (isCorrect) {
             selectedBtn.classList.add("selected-correct");
-            progressData[currentMenuKey] = (progressData[currentMenuKey] || 0) + 1;
-            localStorage.setItem("math_app_progress", JSON.stringify(progressData));
+            
+            // ⭕️ 仕様①：正解したら連続正解数を +1
+            currentContinuousCorrect++;
+            
+            // 5連続に達していなければ現在のデータをローカルに保存（すでにクリア済みの場合は5のままキープ）
+            if (progressData[currentMenuKey] < 5 || !progressData[currentMenuKey]) {
+                progressData[currentMenuKey] = currentContinuousCorrect;
+                localStorage.setItem("math_app_progress", JSON.stringify(progressData));
+            }
+            
         } else {
             selectedBtn.classList.add("selected-incorrect");
-            // 間違えた場合も、生データの一致する「本物の正解ボタン1つだけ」を100%確実に緑色にする
             choices.forEach(btn => {
                 let rawAttr = btn.getAttribute("data-raw-choice");
                 if (String(rawAttr).getClean() === String(correctAnswer).getClean()) {
                     btn.classList.add("selected-correct");
                 }
             });
+
+            // ⭕️ 仕様①：1問でも間違えたら、連続正解数は無慈悲に「0」へリセット！
+            currentContinuousCorrect = 0;
+            
+            // すでに王冠（クリア済み）になっていない場合のみ、ローカルの進捗データも0に戻す
+            if (progressData[currentMenuKey] < 5 || !progressData[currentMenuKey]) {
+                progressData[currentMenuKey] = 0;
+                localStorage.setItem("math_app_progress", JSON.stringify(progressData));
+            }
 
             let cleanHint = String(currentQuestion.difficulty || "").trim(); 
             cleanHint = convertToVerticalFraction(cleanHint); 
@@ -397,10 +441,31 @@
 
         const resArea = document.getElementById("result-area");
         resArea.className = "result " + (isCorrect ? "correct" : "incorrect");
-        resArea.textContent = isCorrect ? "〇 正解！" : "× 不正解...";
+        
+        // 画面のテキストで「現在の連勝状況」をリアルタイムに突きつける
+        if (isCorrect) {
+            resArea.textContent = `〇 正解！ 【これで ${currentContinuousCorrect} 連勝！】`;
+        } else {
+            resArea.textContent = "× 不正解... 【連勝ストップ！残り5連続】";
+        }
         resArea.classList.remove("hidden");
 
-        document.getElementById("next-btn").classList.remove("hidden");
+        // ⭕️ 仕様②：見事5連続正解を達成したかチェック
+        if (currentContinuousCorrect >= 5) {
+            // 5連続達成ログを完全にローカルにロック
+            progressData[currentMenuKey] = 5;
+            localStorage.setItem("math_app_progress", JSON.stringify(progressData));
+            
+            // 1秒後にクリアポップアップを全画面表示させる
+            setTimeout(() => {
+                const config = modeConfigs.find(m => cleanText(m.category) === cleanText(selectedCategory) && cleanText(m.difficulty) === cleanText(selectedDifficulty));
+                document.getElementById("clear-message").innerHTML = `<strong>${config ? config.label : selectedCategory}</strong><br>5問連続正解を完璧に達成しました！<br>実力がしっかり身についた証拠です。`;
+                document.getElementById("clear-modal-screen").classList.remove("hidden");
+            }, 1200);
+        } else {
+            // 5連勝に届いていなければ「次の問題へ進む」ボタンを出す
+            document.getElementById("next-btn").classList.remove("hidden");
+        }
         
         triggerMathRender();
 
@@ -416,6 +481,12 @@
                 userAnswer: chosenAnswer
             })
         });
+    }
+
+    // ⭕️ 仕様②：クリア画面のボタンを押したら、クイズ画面を閉じて単元メニューに強制送還する関数
+    function closeClearModal() {
+        document.getElementById("clear-modal-screen").classList.add("hidden");
+        showMenuScreen(); // 単元選択画面へ戻る
     }
 
     function triggerMathRender() {
