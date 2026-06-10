@@ -68,12 +68,12 @@
         .result { margin-top: 20px; padding: 15px; border-radius: 10px; font-weight: bold; text-align: center; font-size: 18px; }
         .correct { background-color: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
         .incorrect { background-color: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
-        .hint-box { background-color: #fef9c3; color: #713f12; padding: 15px; border-radius: 10px; margin-top: 15px; font-size: 15px; border-left: 5px solid #eab308; }
+        .hint-box { background-color: #fef9c3; color: #713f12; padding: 15px; border-radius: 10px; margin-top: 15px; font-size: 15px; border-left: 5px solid #eab308; display: block; word-break: break-all; }
         
         #header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
         #user-display { font-size: 13px; color: #64748b; font-weight: 700; }
         
-        /* ✨ 講師画面用の新しい美形スタイルシート */
+        /* 講師画面用スタイル */
         .admin-student-card { background: #ffffff; border: 2px solid var(--border-color); border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 2px 5px rgba(0,0,0,0.02); }
         .admin-student-name { font-size: 16px; font-weight: bold; color: #0f172a; margin: 0 0 12px 0; border-left: 4px solid var(--primary-color); padding-left: 8px; }
         .admin-progress-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px dashed var(--border-color); font-size: 13px; }
@@ -82,8 +82,8 @@
         .admin-progress-bar-container { width: 30%; background: #e2e8f0; height: 8px; border-radius: 4px; overflow: hidden; position: relative; }
         .admin-progress-bar-fill { height: 100%; background: var(--primary-color); border-radius: 4px; transition: width 0.3s ease; }
         .admin-progress-bar-fill.complete { background: var(--secondary-color); }
-        .admin-score-badge { width: 10%; text-align: right; font-weight: bold; font-size: 12px; color: #0f172a; }
-        .admin-score-badge.gold { color: #b45309; }
+        .admin-student-card .admin-progress-row .admin-score-badge { width: 10%; text-align: right; font-weight: bold; font-size: 12px; color: #0f172a; }
+        .admin-student-card .admin-progress-row .admin-score-badge.gold { color: #b45309; }
     </style>
 </head>
 <body>
@@ -117,7 +117,7 @@
             <div><span class="badge" id="q-category"></span><span class="difficulty-badge" id="q-difficulty"></span></div>
             <div id="q-instruction" style="font-size: 15px; color: #475569; margin-top: 15px; font-weight: bold;"></div>
             
-            <div id="q-text" style="font-size: 26px; margin: 25px 0; text-align: center; font-weight: bold; min-height: 40px;"></div>
+            <div id="q-text" style="font-size: 18px; margin: 25px 0; text-align: left; line-height: 1.7; font-weight: 500; min-height: 40px; background:#fff; padding:15px; border-radius:8px; border:1px solid var(--border-color); white-space: normal; word-break: break-all;"></div>
             
             <div class="choices-container" id="choices-area"></div>
             
@@ -161,7 +161,10 @@
         { category: "式の値（代入）", difficulty: "標準", label: "式の値・代入（標準）" },
         { category: "等式の変形", difficulty: "基本", label: "等式の変形（基本）" },
         { category: "等式の変形", difficulty: "標準", label: "等式の変形（標準）" },
-        { category: "等式の変形（応用）", difficulty: "発展", label: "等式の変形（発展）" }
+        { category: "等式の変形（応用）", difficulty: "発展", label: "等式の変形（発展）" },
+        { category: "文字式の利用", difficulty: "標準", label: "文字式の利用（説明・標準）" },
+        { category: "文字式の利用", difficulty: "発展", label: "文字式の利用（説明・発展）" },
+        { category: "図形への利用", difficulty: "発展", label: "図形・規則性の応用（発展）" }
     ];
 
     function secureShuffle(array) {
@@ -176,10 +179,34 @@
     function convertToVerticalFraction(text) {
         if (!text) return "";
         let str = String(text).trim();
-        const regex = /([a-zA-Z0-9\-+]+)\/([a-zA-Z0-9\-+]+)/g;
+        const regex = /([a-zA-Z0-9\-+^]+)\/([a-zA-Z0-9\-+^]+)/g;
         while (regex.test(str)) {
             str = str.replace(regex, "\\frac{$1}{$2}");
         }
+        return str;
+    }
+
+    // ⭕️ 生の「\frac{1}{2}」などのコードが入っていても綺麗に数式タグで包み込むように機能拡張
+    function injectInlineMathTags(text) {
+        if (!text) return "";
+        let str = String(text);
+        
+        // 元々入っている \frac{}{} などのコマンドを数式タグ $...$ で自動的に包む
+        str = str.replace(/(\\frac\{[^{}]*\}\{[^{}]*\})/g, "$$1$");
+        str = str.replace(/\\pi/g, "$\\pi$");
+        
+        const targetLetters = ['n', 'm', 'r', 'h', 'x', 'y', 'a', 'b', 'c', 'l', 'S', 'V'];
+        targetLetters.forEach(letter => {
+            const pattern = new RegExp(`([^a-zA-Z$\\\\])(${letter})([^a-zA-Z$])`, 'g');
+            str = ` ${str} `.replace(pattern, function(match, p1, p2, p3) {
+                return p1 + '$' + p2 + '$' + p3;
+            }).trim();
+        });
+        
+        str = str.replace(/\[ア\]/g, "$[ア]$").replace(/\[イ\]/g, "$[イ]$").replace(/\[ウ\]/g, "$[ウ]$");
+        
+        // 重複してしまった $$ を $ に綺麗に掃除する
+        str = str.replace(/\$\$/g, "$");
         return str;
     }
 
@@ -269,10 +296,11 @@
             
             let cSheet = cleanText(q.category);
             let cMenu = cleanText(selectedCategory);
-            let dSheet = cleanText(q.difficulty);
+            
+            let dSheet = cleanText(q.question); 
             let dMenu = cleanText(selectedDifficulty);
             
-            return cSheet.includes(cMenu) || cMenu.includes(cSheet) && (dSheet.includes(dMenu) || dMenu.includes(dSheet));
+            return cSheet === cMenu && dSheet === dMenu;
         });
         currentModePool = secureShuffle(currentModePool);
     }
@@ -298,14 +326,27 @@
         const qTextDiv = document.getElementById("q-text");
         let rawQ = currentQuestion.answer || ""; 
         let cleanQ = rawQ.replace(/^(\$\$|\\\(|\\\[)/, "").replace(/(\$\$|\\\)|\\\])$/, "").trim();
-        
         cleanQ = convertToVerticalFraction(cleanQ);
-        qTextDiv.textContent = `\\[ ${cleanQ} \\]`;
+
+        // ⭕️ \frac を含む応用文問題も100%数式化をかける
+        const hasMathOrJapanese = /[\u30a0-\u30ff\u3040-\u309f\u4e00-\u9faf\\{}]/.test(cleanQ);
+        
+        if (hasMathOrJapanese) {
+            let processedQ = injectInlineMathTags(cleanQ);
+            qTextDiv.innerHTML = processedQ;
+            qTextDiv.style.textAlign = "left";
+            qTextDiv.style.fontSize = "16px";
+        } else {
+            qTextDiv.innerHTML = `\\[ ${cleanQ} \\]`;
+            qTextDiv.style.textAlign = "center";
+            qTextDiv.style.fontSize = "24px";
+        }
 
         const instructionArea = document.getElementById("q-instruction");
-        if (String(currentQuestion.category).includes("等式の変形")) {
-            const match = cleanQ.match(/\[([a-z])\]/);
-            instructionArea.textContent = `次の等式を ${match ? match[1] : "指定された文字"} について解きなさい。`;
+        if (String(currentQuestion.category).includes("文字式の利用") || String(currentQuestion.category).includes("図形への利用")) {
+            instructionArea.textContent = "問題文をよく読み、空欄や問いに対する正しい答えを選びなさい。";
+        } else if (String(currentQuestion.category).includes("等式の変形")) {
+            instructionArea.textContent = "次の等式を指定された文字について解きなさい。";
         } else if (String(currentQuestion.category).includes("式の値")) {
             instructionArea.textContent = "文字に値を代入して、式の値を求めなさい。";
         } else {
@@ -332,7 +373,15 @@
             
             const btn = document.createElement("button");
             btn.className = "choice-btn";
-            btn.textContent = `\\[ ${cleanChoice} \\]`;
+            
+            // ⭕️ 選択肢ボタン内の \frac 生コードも確実にインライン数式化して綺麗に表示
+            const hasMathOrJapanese = /[\u30a0-\u30ff\u3040-\u309f\u4e00-\u9faf\\{}]/.test(cleanChoice);
+            if (hasMathOrJapanese) {
+                btn.innerHTML = injectInlineMathTags(cleanChoice);
+            } else {
+                btn.innerHTML = `\\[ ${cleanChoice} \\]`;
+            }
+            
             btn.onclick = () => selectChoice(btn, choice, correctAnswer);
             choicesArea.appendChild(btn);
         });
@@ -347,7 +396,7 @@
 
         choices.forEach(btn => {
             btn.disabled = true; 
-            if (String(btn.textContent).getClean() === String(correctAnswer).getClean()) {
+            if (String(btn.textContent).getClean() === String(correctAnswer).getClean() || btn.innerHTML.includes(correctAnswer)) {
                 btn.classList.add("selected-correct"); 
             }
         });
@@ -365,12 +414,18 @@
             progressData[currentMenuKey] = (progressData[currentMenuKey] || 0) + 1;
             localStorage.setItem("math_app_progress", JSON.stringify(progressData));
         } else {
-            let cleanHint = String(currentQuestion.difficulty || "").replace(/^(\$\$|\\\(|\\\[)/, "").replace(/(\$\$|\\\)|\\\])$/, "").trim(); 
+            let cleanHint = String(currentQuestion.difficulty || "").trim(); 
             cleanHint = convertToVerticalFraction(cleanHint); 
             
             const hintArea = document.getElementById("hint-area");
             hintArea.classList.remove("hidden");
-            hintArea.textContent = `💡解説: \\[ ${cleanHint} \\]`;
+            
+            const hasMathOrJapanese = /[\u30a0-\u30ff\u3040-\u309f\u4e00-\u9faf\\{}]/.test(cleanHint);
+            if (hasMathOrJapanese) {
+                hintArea.innerHTML = `💡解説:<br>${injectInlineMathTags(cleanHint)}`;
+            } else {
+                hintArea.innerHTML = `💡解説: \\[ ${cleanHint} \\]`;
+            }
         }
 
         document.getElementById("next-btn").classList.remove("hidden");
@@ -397,7 +452,8 @@
                 delimiters: [
                     {left: "$$", right: "$$", display: true},
                     {left: "\\(", right: "\\)", display: false},
-                    {left: "\\[", right: "\\]", display: true}
+                    {left: "\\[", right: "\\]", display: true},
+                    {left: "$", right: "$", display: false}
                 ],
                 throwOnError: false
             });
@@ -416,7 +472,7 @@
     }
     
     function resetStudentData() {
-        if(confirm("この生徒の学習データをリセットして最初からやり直しますか？")) {
+        if(confirm("この生徒の学習データをリセットして最初からやり過しますか？")) {
             modeConfigs.forEach(mode => { delete progressData[`${currentStudentId}__${mode.category}__${mode.difficulty}`]; });
             localStorage.setItem("math_app_progress", JSON.stringify(progressData));
             renderMenu();
@@ -436,7 +492,6 @@
 
     function closeAdmin() { if(currentStudentId) { showMenuScreen(); } else { backToLogin(); } }
 
-    // ✨ 講師用管理画面のレンダリング処理（横スクロールテーブルを全廃し、美しいレポートカード風に大刷新）
     function renderAdminDashboard() {
         const container = document.getElementById("admin-content");
         container.innerHTML = "<p style='font-size:12px; color:#64748b; margin-bottom:15px;'>※ 生徒ごとの各単元のクリア（5問正解）状況とメーター一覧です。</p>";
