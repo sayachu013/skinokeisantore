@@ -186,30 +186,6 @@
         return str;
     }
 
-    // ⭕️ 生の「\frac{1}{2}」などのコードが入っていても綺麗に数式タグで包み込むように機能拡張
-    function injectInlineMathTags(text) {
-        if (!text) return "";
-        let str = String(text);
-        
-        // 元々入っている \frac{}{} などのコマンドを数式タグ $...$ で自動的に包む
-        str = str.replace(/(\\frac\{[^{}]*\}\{[^{}]*\})/g, "$$1$");
-        str = str.replace(/\\pi/g, "$\\pi$");
-        
-        const targetLetters = ['n', 'm', 'r', 'h', 'x', 'y', 'a', 'b', 'c', 'l', 'S', 'V'];
-        targetLetters.forEach(letter => {
-            const pattern = new RegExp(`([^a-zA-Z$\\\\])(${letter})([^a-zA-Z$])`, 'g');
-            str = ` ${str} `.replace(pattern, function(match, p1, p2, p3) {
-                return p1 + '$' + p2 + '$' + p3;
-            }).trim();
-        });
-        
-        str = str.replace(/\[ア\]/g, "$[ア]$").replace(/\[イ\]/g, "$[イ]$").replace(/\[ウ\]/g, "$[ウ]$");
-        
-        // 重複してしまった $$ を $ に綺麗に掃除する
-        str = str.replace(/\$\$/g, "$");
-        return str;
-    }
-
     function cleanText(str) {
         if (!str) return "";
         return String(str).replace(/\([^)]*\)/g, "").replace(/（[^）]*）/g, "").replace(/\s+/g, "").trim();
@@ -328,12 +304,10 @@
         let cleanQ = rawQ.replace(/^(\$\$|\\\(|\\\[)/, "").replace(/(\$\$|\\\)|\\\])$/, "").trim();
         cleanQ = convertToVerticalFraction(cleanQ);
 
-        // ⭕️ \frac を含む応用文問題も100%数式化をかける
-        const hasMathOrJapanese = /[\u30a0-\u30ff\u3040-\u309f\u4e00-\u9faf\\{}]/.test(cleanQ);
+        const hasJapanese = /[\u30a0-\u30ff\u3040-\u309f\u4e00-\u9faf]/.test(cleanQ);
         
-        if (hasMathOrJapanese) {
-            let processedQ = injectInlineMathTags(cleanQ);
-            qTextDiv.innerHTML = processedQ;
+        if (hasJapanese) {
+            qTextDiv.innerHTML = cleanQ;
             qTextDiv.style.textAlign = "left";
             qTextDiv.style.fontSize = "16px";
         } else {
@@ -374,13 +348,12 @@
             const btn = document.createElement("button");
             btn.className = "choice-btn";
             
-            // ⭕️ 選択肢ボタン内の \frac 生コードも確実にインライン数式化して綺麗に表示
-            const hasMathOrJapanese = /[\u30a0-\u30ff\u3040-\u309f\u4e00-\u9faf\\{}]/.test(cleanChoice);
-            if (hasMathOrJapanese) {
-                btn.innerHTML = injectInlineMathTags(cleanChoice);
-            } else {
-                btn.innerHTML = `\\[ ${cleanChoice} \\]`;
-            }
+            // ⭕️ 【超重要修正】ボタンに「生データの文字列」をカスタム属性として完全に記憶させる
+            btn.setAttribute("data-raw-choice", String(choice).trim());
+            
+            btn.innerHTML = choice.includes('\\frac') || !/[\u30a0-\u30ff\u3040-\u309f\u4e00-\u9faf]/.test(cleanChoice) 
+                ? `$${cleanChoice}$` 
+                : cleanChoice;
             
             btn.onclick = () => selectChoice(btn, choice, correctAnswer);
             choicesArea.appendChild(btn);
@@ -396,37 +369,36 @@
 
         choices.forEach(btn => {
             btn.disabled = true; 
-            if (String(btn.textContent).getClean() === String(correctAnswer).getClean() || btn.innerHTML.includes(correctAnswer)) {
-                btn.classList.add("selected-correct"); 
-            }
         });
 
-        if (!isCorrect) {
+        // ⭕️ 【大改修】includesによるガバガバ判定を完全に廃止。
+        // 生成時に埋め込んだ「data-raw-choice」属性の生データ同士を、完全一致でピンポイント突合。
+        if (isCorrect) {
+            selectedBtn.classList.add("selected-correct");
+            progressData[currentMenuKey] = (progressData[currentMenuKey] || 0) + 1;
+            localStorage.setItem("math_app_progress", JSON.stringify(progressData));
+        } else {
             selectedBtn.classList.add("selected-incorrect");
+            // 間違えた場合も、生データの一致する「本物の正解ボタン1つだけ」を100%確実に緑色にする
+            choices.forEach(btn => {
+                let rawAttr = btn.getAttribute("data-raw-choice");
+                if (String(rawAttr).getClean() === String(correctAnswer).getClean()) {
+                    btn.classList.add("selected-correct");
+                }
+            });
+
+            let cleanHint = String(currentQuestion.difficulty || "").trim(); 
+            cleanHint = convertToVerticalFraction(cleanHint); 
+            
+            const hintArea = document.getElementById("hint-area");
+            hintArea.classList.remove("hidden");
+            hintArea.innerHTML = `💡解説:<br>${cleanHint}`;
         }
 
         const resArea = document.getElementById("result-area");
         resArea.className = "result " + (isCorrect ? "correct" : "incorrect");
         resArea.textContent = isCorrect ? "〇 正解！" : "× 不正解...";
         resArea.classList.remove("hidden");
-
-        if (isCorrect) {
-            progressData[currentMenuKey] = (progressData[currentMenuKey] || 0) + 1;
-            localStorage.setItem("math_app_progress", JSON.stringify(progressData));
-        } else {
-            let cleanHint = String(currentQuestion.difficulty || "").trim(); 
-            cleanHint = convertToVerticalFraction(cleanHint); 
-            
-            const hintArea = document.getElementById("hint-area");
-            hintArea.classList.remove("hidden");
-            
-            const hasMathOrJapanese = /[\u30a0-\u30ff\u3040-\u309f\u4e00-\u9faf\\{}]/.test(cleanHint);
-            if (hasMathOrJapanese) {
-                hintArea.innerHTML = `💡解説:<br>${injectInlineMathTags(cleanHint)}`;
-            } else {
-                hintArea.innerHTML = `💡解説: \\[ ${cleanHint} \\]`;
-            }
-        }
 
         document.getElementById("next-btn").classList.remove("hidden");
         
@@ -494,7 +466,7 @@
 
     function renderAdminDashboard() {
         const container = document.getElementById("admin-content");
-        container.innerHTML = "<p style='font-size:12px; color:#64748b; margin-bottom:15px;'>※ 生徒ごとの各単元のクリア（5問正解）状況とメーター一覧です。</p>";
+        container.innerHTML = "<p style='font-size:12px; color:#64748b; margin-bottom:15px;'>※ 生徒ごとの各単元クリア状況一覧です。</p>";
         
         students.forEach(s => {
             if(s) {
